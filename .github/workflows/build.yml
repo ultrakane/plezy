@@ -41,20 +41,29 @@ jobs:
       - name: Build Android APK
         run: flutter build apk --release --target-platform android-arm,android-arm64 --split-per-abi
 
-      # 💥 核心新增：自動提取版本號並洗刷檔名
+      # 1. 自動提取版本號並洗刷檔名
       - name: Rename APKs with Version
         id: rename_apks
         run: |
-          # 1. 從 pubspec.yaml 中精準抓取版本號（如 2.9.1），並過濾掉尾隨的 + 號與空白
           VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d '[:space:]')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          
-          # 2. 進入輸出資料夾進行重新命名
           cd build/app/outputs/flutter-apk/
           mv app-armeabi-v7a-release.apk "plezy-android-${VERSION}-armeabi-v7a.apk" || true
           mv app-arm64-v8a-release.apk "plezy-android-${VERSION}-arm64-v8a.apk" || true
 
-      # 💥 核心修正：將重新命名後的精美檔案打包上傳，且 Artifact 壓縮檔名稱也會自動帶上版本號
+      # 💥 核心新增：自動生成臨時金鑰並對所有 APK 進行數位簽章 (攻破 Android 安全防線)
+      - name: Self-Sign APKs
+        run: |
+          # A. 生成臨時的 keystore 金鑰檔案
+          keytool -genkey -v -keystore temp.keystore -alias temp_alias -keyalg RSA -keysize 2048 -validity 10000 -storepass mypassword -keypass mypassword -dname "CN=MySelf, OU=Dev, O=Self, L=Taipei, S=Taiwan, C=TW"
+          
+          # B. 迴圈掃描並對所有重新命名後的 APK 進行 jarsigner 簽章
+          for apk in build/app/outputs/flutter-apk/plezy-android-*.apk; do
+            echo "正在簽章: $apk"
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA256 -keystore temp.keystore -storepass mypassword -keypass mypassword "$apk" temp_alias
+          done
+
+      # 2. 將已簽章、帶有版本號的精美檔案打包上傳
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
