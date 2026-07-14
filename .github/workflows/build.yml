@@ -85,11 +85,11 @@ jobs:
 
       - name: Configure Android signing
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=plezy, OU=plezy, O=plezy, L=plezy, S=plezy, C=US"
           cat > android/key.properties << EOF
-          storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storePassword=123456
+          keyPassword=123456
+          keyAlias=upload
           storeFile=upload-keystore.jks
           EOF
 
