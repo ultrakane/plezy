@@ -39,11 +39,25 @@ jobs:
         run: flutter pub run slang
 
       - name: Build Android APK
-        run: flutter build apk --release --target-platform android-arm --split-per-abi
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-per-abi
 
+      # 💥 核心新增：自動提取版本號並洗刷檔名
+      - name: Rename APKs with Version
+        id: rename_apks
+        run: |
+          # 1. 從 pubspec.yaml 中精準抓取版本號（如 2.9.1），並過濾掉尾隨的 + 號與空白
+          VERSION=$(grep 'version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # 2. 進入輸出資料夾進行重新命名
+          cd build/app/outputs/flutter-apk/
+          mv app-armeabi-v7a-release.apk "plezy-android-${VERSION}-armeabi-v7a.apk" || true
+          mv app-arm64-v8a-release.apk "plezy-android-${VERSION}-arm64-v8a.apk" || true
+
+      # 💥 核心修正：將重新命名後的精美檔案打包上傳，且 Artifact 壓縮檔名稱也會自動帶上版本號
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+          name: plezy-android-v${{ steps.rename_apks.outputs.version }}
+          path: build/app/outputs/flutter-apk/plezy-android-*.apk
           if-no-files-found: error
