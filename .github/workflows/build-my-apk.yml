@@ -1,0 +1,104 @@
+name: Build My Custom APKs
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天 UTC 02:00 自動巡邏官方新版本
+  workflow_dispatch: # 手動觸發按鈕
+
+permissions:
+  contents: write # 賦予自動建立 Releases 的權限
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # 🛡️ 30分鐘超時自動斷路防護
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Fetch Upstream and Check Latest Tag
+        id: check_tag
+        run: |
+          git remote add upstream https://github.com/edde746/plezy.git || true
+          git fetch upstream --tags --quiet
+
+          # 精準取得官方最新 Tag
+          LATEST_TAG=$(git tag -l --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="v2.11.0"; fi
+
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          echo "官方最新版本號為: $LATEST_TAG"
+
+          # 檢查是否已存在該版本的 Release
+          if gh release view "$LATEST_TAG" >/dev/null 2>&1; then
+            echo "SHOULD_BUILD=false" >> $GITHUB_ENV
+            echo "⚠️ Release $LATEST_TAG 已存在，跳過重複編譯。"
+          else
+            echo "SHOULD_BUILD=true" >> $GITHUB_ENV
+            echo "✨ 偵測到新版本 $LATEST_TAG，準備開始編譯！"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout Latest Tag Code
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          git checkout ${{ env.LATEST_TAG }}
+          git submodule update --init --recursive
+
+      - name: Setup Java
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter Engine
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Disable Android Lint & Get Dependencies
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p ~/.gradle/init.d
+          echo 'allprojects { tasks.matching { it.name.contains("lint") }.configureEach { enabled = false } }' > ~/.gradle/init.d/disable-lint.gradle
+          flutter pub get
+
+      - name: Build APKs
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        run: flutter build apk --release --split-per-abi
+
+      - name: Sign APKs (套用固定專屬金鑰)
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          # 從 Secrets 提取金鑰並還原
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          sudo apt-get install -y apksigner
+          
+          # 正式套用專屬簽名
+          apksigner sign --ks release.keystore --ks-key-alias mykey --ks-pass pass:android --key-pass pass:android build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+          apksigner sign --ks release.keystore --ks-key-alias mykey --ks-pass pass:android --key-pass pass:android build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Organize and Publish to Releases
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.LATEST_TAG }}
+          name: Plezy ${{ env.LATEST_TAG }} Custom Release
+          body: |
+            🎉 **Plezy 自動編譯完成！**
+            - 📌 基於官方最新版本：`${{ env.LATEST_TAG }}`
+            - 🔑 **已套用專屬固定金鑰，下載後可直接無縫覆蓋升級！**
+            - 📱 包含 `arm64-v8a` 與 `armeabi-v7a` 架構。
+          files: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
