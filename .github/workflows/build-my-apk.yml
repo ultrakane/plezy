@@ -28,7 +28,7 @@ jobs:
 
           # 精準取得官方最新 Tag
           LATEST_TAG=$(git tag -l --sort=-v:refname | head -n 1)
-          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="v2.11.0"; fi
+          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="v2.12.1"; fi
 
           echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
           echo "官方最新版本號為: $LATEST_TAG"
@@ -86,6 +86,14 @@ jobs:
           apksigner sign --ks release.keystore --ks-key-alias mykey --ks-pass pass:android --key-pass pass:android build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           apksigner sign --ks release.keystore --ks-key-alias mykey --ks-pass pass:android --key-pass pass:android build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
+      - name: Organize and Rename APKs (整合專屬檔名)
+        if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p output
+          # 檔名格式：Plezy-[版本號]-Android-[架構].apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk output/Plezy-${{ env.LATEST_TAG }}-Android-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk output/Plezy-${{ env.LATEST_TAG }}-Android-armeabi-v7a.apk
+
       - name: Organize and Publish to Releases
         if: env.SHOULD_BUILD == 'true' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -97,8 +105,6 @@ jobs:
             - 📌 基於官方最新版本：`${{ env.LATEST_TAG }}`
             - 🔑 **已套用專屬固定金鑰，下載後可直接無縫覆蓋升級！**
             - 📱 包含 `arm64-v8a` 與 `armeabi-v7a` 架構。
-          files: |
-            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          files: output/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
