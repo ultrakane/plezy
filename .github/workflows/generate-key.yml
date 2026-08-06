@@ -1,0 +1,27 @@
+name: Generate Keystore Secret
+
+on:
+  workflow_dispatch: # 手動點擊按鈕執行
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Generate and Output Base64 Key
+        run: |
+          # 在雲端產生金鑰
+          keytool -genkey -v -keystore release.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Plezy,O=CustomBuild,C=TW" -storepass android -keypass android
+          
+          # 轉為 Base64 並印在網頁 Summary 上
+          BASE64_KEY=$(base64 -w 0 release.keystore)
+          echo "### 🔑 你的 KEYSTORE_BASE64 金鑰如下：" >> $GITHUB_STEP_SUMMARY
+          echo "請複製下方框框內的所有文字，貼到 GitHub Secrets 的 KEYSTORE_BASE64 欄位中：" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$BASE64_KEY" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
