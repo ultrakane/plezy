@@ -24,18 +24,22 @@ jobs:
         id: check_tag
         run: |
           git remote add upstream https://github.com/edde746/plezy.git || true
-          
-          # 💡 關鍵修正：加入 --force 強制覆蓋 Tag 碰撞，並移除 --quiet 避免隱藏錯誤
           git fetch upstream --tags --force
 
-          # 精準取得官方最新 Tag
-          LATEST_TAG=$(git tag -l --sort=-v:refname | head -n 1)
-          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="2.12.1"; fi
+          # 🎯 雙保險過濾：優先抓官方 GitHub 標記的「Latest 正式 Release」
+          LATEST_TAG=$(gh release view -R edde746/plezy --json tagName -q .tagName 2>/dev/null || true)
+
+          # 備援機制：若 GitHub API 失敗，從 git tag 中嚴格過濾純數字版本號 (如 2.26.0)，排除 test-* 等標籤
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG=$(git tag -l --sort=-v:refname | grep -E '^[0-9]+(\.[0-9]+)+' | head -n 1)
+          fi
+
+          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="2.26.0"; fi
 
           echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
-          echo "官方最新版本號為: $LATEST_TAG"
+          echo "官方最新正式版本號為: $LATEST_TAG"
 
-          # 檢查是否已存在該版本的 Release
+          # 檢查自己 repo 是否已存在該版本的 Release
           if gh release view "$LATEST_TAG" >/dev/null 2>&1; then
             echo "SHOULD_BUILD=false" >> $GITHUB_ENV
             echo "⚠️ Release $LATEST_TAG 已存在，跳過重複編譯。"
